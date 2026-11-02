@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  MERCHANT
+  MANAGER
+  STAFF
+  ADMIN
+}
+
+enum SenderType {
+  CUSTOMER
+  MERCHANT
+  AI
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  PROCESSING
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  BANK_TRANSFER
+  OTHER
+}
+
+enum InsightType {
+  DAILY_SUMMARY
+  WEEKLY_SUMMARY
+  INVENTORY_ALERT
+  CUSTOMER_INSIGHT
+  REVENUE_ANALYSIS
+  RECOMMENDATION
+}
+
+enum NotificationType {
+  ORDER
+  PAYMENT
+  INVENTORY
+  AI
+  SYSTEM
+}
+
+model User {
+  id           String   @id @default(uuid())
+  merchantId   String?
+  fullName     String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(MERCHANT)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  merchant Merchant? @relation(fields: [merchantId], references: [id])
+  auditLogs AuditLog[]
+
+  @@index([merchantId])
+}
+
+model Merchant {
+  id           String   @id @default(uuid())
+  businessName String
+  ownerName    String
+  phone        String   @unique
+  email        String   @unique
+  address      String?
+  city         String?
+  state        String?
+  pincode      String?
+  gstNumber    String?
+  logo         String?
+  autoReply    Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users         User[]
+  customers     Customer[]
+  conversations Conversation[]
+  products      Product[]
+  categories    Category[]
+  orders        Order[]
+  payments      Payment[]
+  insights      AIInsight[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+}
+
+model Customer {
+  id                String   @id @default(uuid())
+  merchantId        String
+  fullName          String
+  phone             String
+  email             String?
+  address           String?
+  notes             String?
+  preferredLanguage String   @default("Hinglish")
+  totalOrders       Int      @default(0)
+  outstandingAmount Float    @default(0)
+  lastOrderDate     DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  merchant      Merchant       @relation(fields: [merchantId], references: [id])
+  conversations Conversation[]
+  orders        Order[]
+  payments      Payment[]
+
+  @@unique([merchantId, phone])
+  @@index([merchantId])
+}
+
+model Conversation {
+  id            String    @id @default(uuid())
+  merchantId    String
+  customerId    String
+  lastMessage   String?
+  lastMessageAt DateTime?
+  unreadCount   Int       @default(0)
+  status        String    @default("ACTIVE")
+  createdAt     DateTime  @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+  messages Message[]
+
+  @@index([merchantId])
+  @@index([customerId])
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  senderType     SenderType
+  messageType    MessageType @default(TEXT)
+  content        String
+  aiProcessed    Boolean     @default(false)
+  intent         String?
+  confidence     Float?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+}
+
+model Category {
+  id          String  @id @default(uuid())
+  merchantId  String
+  name        String
+  description String?
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  products Product[]
+
+  @@index([merchantId])
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  merchantId    String
+  categoryId    String?
+  productName   String
+  sku           String?
+  sellingPrice  Float
+  purchasePrice Float?
+  unit          String   @default("piece")
+  barcode       String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  merchant  Merchant   @relation(fields: [merchantId], references: [id])
+  category  Category?  @relation(fields: [categoryId], references: [id])
+  inventory Inventory?
+  orderItems OrderItem[]
+
+  @@unique([merchantId, sku])
+  @@index([merchantId])
+}
+
+model Inventory {
+  id           String   @id @default(uuid())
+  productId    String   @unique
+  currentStock Float    @default(0)
+  minimumStock Float    @default(0)
+  reorderLevel Float    @default(0)
+  updatedAt    DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model Order {
+  id            String        @id @default(uuid())
+  merchantId    String
+  customerId    String
+  status        OrderStatus   @default(DRAFT)
+  subtotal      Float         @default(0)
+  tax           Float         @default(0)
+  discount      Float         @default(0)
+  total         Float         @default(0)
+  paymentStatus PaymentStatus @default(PENDING)
+  source        String        @default("WHATSAPP")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  merchant   Merchant    @relation(fields: [merchantId], references: [id])
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  items      OrderItem[]
+  payments   Payment[]
+
+  @@index([merchantId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String
+  productId  String?
+  quantity   Float   @default(1)
+  unitPrice  Float   @default(0)
+  totalPrice Float   @default(0)
+
+  order   Order    @relation(fields: [orderId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  merchantId      String
+  customerId      String
+  orderId         String?
+  amount          Float
+  paymentMethod   PaymentMethod @default(CASH)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentDate     DateTime      @default(now())
+  referenceNumber String?
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+  order    Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([merchantId])
+  @@index([customerId])
+}
+
+model AIInsight {
+  id          String      @id @default(uuid())
+  merchantId  String
+  insightType InsightType
+  title       String
+  description String?
+  confidence  Float       @default(0)
+  generatedAt DateTime    @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  merchantId String
+  title      String
+  message    String?
+  type       NotificationType
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  merchantId String?
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  merchant Merchant? @relation(fields: [merchantId], references: [id])
+  user     User?     @relation(fields: [userId], references: [id])
+
+  @@index([merchantId])
+  @@index([userId])
+}
